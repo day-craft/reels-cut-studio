@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 import {
   MIME_CANDIDATES,
   pickMimeType,
+  mimeCandidates,
+  isAppleWebKit,
   extensionFor,
   recorderOptions,
   videoBitrate,
@@ -24,6 +26,16 @@ test('MP4 is preferred when the browser supports it', () => {
   assert.equal(pickMimeType(() => {
     throw new Error('unsupported');
   }), '');
+});
+
+test('non-Apple browsers record WebM first to avoid VP9-in-MP4 files', () => {
+  const list = mimeCandidates({ preferMp4: false });
+  assert.ok(list[0].startsWith('video/webm'));
+  assert.ok(list[list.length - 1].includes('mp4'));
+  assert.equal(pickMimeType(() => true, { preferMp4: false }), 'video/webm;codecs=vp9,opus');
+  assert.equal(isAppleWebKit({ navigator: { vendor: 'Apple Computer, Inc.' } }), true);
+  assert.equal(isAppleWebKit({ navigator: { vendor: 'Google Inc.' } }), false);
+  assert.equal(isAppleWebKit(null), false);
 });
 
 test('extensions and file names follow the chosen mime', () => {

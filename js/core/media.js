@@ -82,6 +82,42 @@ export function isIOS(userAgent = '') {
   return /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && /Mobile/.test(ua));
 }
 
+/**
+ * Recorded WebM files often report `duration = Infinity` until they are seeked.
+ * Nudge the element to the end once so the real duration appears.
+ */
+export function resolveDuration(video, timeoutMs = 2000) {
+  if (Number.isFinite(video.duration) && video.duration > 0) {
+    return Promise.resolve(video.duration);
+  }
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      video.removeEventListener('durationchange', onChange);
+      try {
+        video.currentTime = 0;
+      } catch (error) {
+        /* noop */
+      }
+      resolve(Number.isFinite(video.duration) ? video.duration : 0);
+    };
+    const onChange = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0) finish();
+    };
+    video.addEventListener('durationchange', onChange);
+    try {
+      video.currentTime = 1e101;
+    } catch (error) {
+      finish();
+      return;
+    }
+    const timer = setTimeout(finish, timeoutMs);
+    if (timer && typeof timer.unref === 'function') timer.unref();
+  });
+}
+
 /** Wait until a media element knows its duration/size, or time out. */
 export function waitForMetadata(video, timeoutMs = 8000) {
   return new Promise((resolve, reject) => {
@@ -98,8 +134,7 @@ export function waitForMetadata(video, timeoutMs = 8000) {
     const onLoaded = () => {
       cleanup();
       resolve(readVideoMeta(video));
-    };
-    const onError = () => {
+    };    const onError = () => {
       cleanup();
       reject(new Error('영상을 읽지 못했어요. 다른 파일로 시도해 주세요.'));
     };
@@ -110,6 +145,12 @@ export function waitForMetadata(video, timeoutMs = 8000) {
       if (Number(video.duration) > 0) resolve(readVideoMeta(video));
       else reject(new Error('영상 정보를 읽는 데 시간이 너무 오래 걸려요.'));
     }, timeoutMs);
+  }).then(async (meta) => {
+    if (meta && Number.isFinite(meta.duration) && meta.duration > 0) return meta;
+    const fixed = await resolveDuration(video);
+    const next = { ...meta, duration: fixed };
+    if (!(next.duration > 0)) throw new Error('영상 길이를 읽지 못했어요.');
+    return next;
   });
 }
 

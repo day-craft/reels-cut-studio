@@ -13,11 +13,34 @@ export const MIME_CANDIDATES = [
 ];
 
 /**
- * Pick the best recording format the browser claims to support.
- * MP4 first: iOS Photos/SNS accept it directly and Safari records H.264.
+ * WebKit records real H.264/AAC when asked for MP4, which Photos and Reels
+ * accept directly. Chromium accepts the same MP4 codec string but writes
+ * VP9/Opus inside an MP4 box, which many players reject — so non-Apple
+ * browsers get WebM first.
  */
-export function pickMimeType(isSupported) {
-  for (const mime of MIME_CANDIDATES) {
+export function isAppleWebKit(win) {
+  try {
+    const vendor = win && win.navigator ? String(win.navigator.vendor || '') : '';
+    return /apple/i.test(vendor);
+  } catch (error) {
+    return false;
+  }
+}
+
+export function mimeCandidates({ preferMp4 = true } = {}) {
+  if (preferMp4) return MIME_CANDIDATES.slice();
+  return [
+    ...MIME_CANDIDATES.filter((mime) => !mime.includes('mp4')),
+    ...MIME_CANDIDATES.filter((mime) => mime.includes('mp4')),
+  ];
+}
+
+/**
+ * Pick the best recording format the browser claims to support.
+ * MP4 first on Apple browsers: iOS Photos/SNS accept it directly.
+ */
+export function pickMimeType(isSupported, options = {}) {
+  for (const mime of mimeCandidates(options)) {
     try {
       if (!isSupported || isSupported(mime)) return mime;
     } catch (error) {
@@ -75,8 +98,8 @@ export function projectHasAudio(sources) {
   return list.some((source) => source && source.hasAudio);
 }
 
-export function recordingPlan({ sources, size, fps = 30, isSupported, anyAudio }) {
-  const mime = pickMimeType(isSupported);
+export function recordingPlan({ sources, size, fps = 30, isSupported, anyAudio, preferMp4 = true }) {
+  const mime = pickMimeType(isSupported, { preferMp4 });
   const hasAudio = anyAudio === undefined ? projectHasAudio(sources) : Boolean(anyAudio);
   return {
     mime,

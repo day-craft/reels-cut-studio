@@ -129,6 +129,7 @@ export function createApp(options = {}) {
     pickBtn: $('pickBtn'),
     fileInput: $('fileInput'),
     previewCanvas: $('previewCanvas'),
+    previewFrame: $('previewFrame'),
     previewBadge: $('previewBadge'),
     previewOverlay: $('previewOverlay'),
     playBtn: $('playBtn'),
@@ -217,6 +218,7 @@ export function createApp(options = {}) {
     },
     exportBlob: null,
     exportMime: '',
+    exportUrl: '',
     exporting: false,
     size: { width: 720, height: 1280 },
   };
@@ -301,6 +303,11 @@ export function createApp(options = {}) {
     if (el.previewBadge) {
       el.previewBadge.textContent = `${state.size.width} × ${state.size.height}`;
     }
+    if (el.previewFrame) {
+      el.previewFrame.style.aspectRatio = `${preview.width} / ${preview.height}`;
+      el.previewFrame.style.width = `min(100%, calc(min(42dvh, 380px) * ${(preview.width / preview.height).toFixed(4)}))`;
+      el.previewFrame.style.height = 'auto';
+    }
   }
 
   /* ── state helpers ─────────────────────────────────────── */
@@ -373,15 +380,21 @@ export function createApp(options = {}) {
   }
 
   function updateTimeUI({ time = 0, total = 0, playing = false } = {}) {
-    if (el.curTime) el.curTime.textContent = formatTimecode(time, { decimals: 0 });
-    if (el.totalTime) el.totalTime.textContent = formatTimecode(total, { decimals: 0 });
+    const timeText = formatTimecode(time, { decimals: 0 });
+    const totalText = formatTimecode(total, { decimals: 0 });
+    if (el.curTime && el.curTime.textContent !== timeText) el.curTime.textContent = timeText;
+    if (el.totalTime && el.totalTime.textContent !== totalText) el.totalTime.textContent = totalText;
     if (el.seekBar) {
       el.seekBar.max = String(Math.max(total, 0.01));
       if (seekPending === null) el.seekBar.value = String(Math.min(time, total));
     }
-    if (el.dockDuration) el.dockDuration.textContent = formatTimecode(total, { decimals: 1 });
+    if (el.dockDuration) {
+      const dockText = formatTimecode(total, { decimals: 1 });
+      if (el.dockDuration.textContent !== dockText) el.dockDuration.textContent = dockText;
+    }
     if (el.dockMeta) {
-      el.dockMeta.textContent = `클립 ${state.clips.length}개 · ${formatSeconds(total)}`;
+      const meta = `클립 ${state.clips.length}개 · ${formatSeconds(total)}`;
+      if (el.dockMeta.textContent !== meta) el.dockMeta.textContent = meta;
     }
     setPlayingUI(playing);
   }
@@ -408,8 +421,13 @@ export function createApp(options = {}) {
       button.style.flexGrow = String(Math.max(0.6, segment.duration));
       if (segment.clipId === state.selectedId) button.classList.add('is-active');
       const source = state.sources.get(segment.clip.sourceId);
-      if (source && source.thumb) button.style.backgroundImage = `url("${source.thumb}")`;
-      button.textContent = String(segment.index + 1);
+      if (source && source.thumb) {
+        button.style.backgroundImage = `linear-gradient(180deg, rgba(20, 14, 24, 0.08), rgba(20, 14, 24, 0.5)), url("${source.thumb}")`;
+      }
+      const number = doc.createElement('span');
+      number.className = 'strip-no';
+      number.textContent = String(segment.index + 1);
+      button.appendChild(number);
       button.setAttribute('aria-label', `클립 ${segment.index + 1}, ${formatTimecode(segment.duration)}`);
       button.addEventListener('click', () => selectClip(segment.clipId, { seekToStart: true }));
       el.clipStrip.appendChild(button);
@@ -940,6 +958,7 @@ export function createApp(options = {}) {
   function openSheet(which) {
     const sheet = which === 'info' ? el.infoSheet : el.exportSheet;
     if (sheet) sheet.hidden = false;
+    if (el.toast) el.toast.hidden = true;
   }
 
   function closeSheet(which) {
@@ -948,6 +967,14 @@ export function createApp(options = {}) {
   }
 
   function resetExportSheet() {
+    if (state.exportUrl && win.URL && win.URL.revokeObjectURL) {
+      try {
+        win.URL.revokeObjectURL(state.exportUrl);
+      } catch (error) {
+        /* noop */
+      }
+      state.exportUrl = '';
+    }
     state.exportBlob = null;
     state.exportMime = '';
     if (el.expResult) el.expResult.hidden = true;
@@ -1061,6 +1088,7 @@ export function createApp(options = {}) {
     state.exportBlob = result.blob;
     state.exportMime = result.mime;
     const url = win.URL.createObjectURL(result.blob);
+    state.exportUrl = url;
     const name = exportFileName(result.mime);
     if (el.expVideo) el.expVideo.src = url;
     if (el.downloadBtn) {
@@ -1080,7 +1108,6 @@ export function createApp(options = {}) {
     if (el.expClose) el.expClose.hidden = false;
     if (el.expNote) el.expNote.hidden = true;
     if (el.expBar) el.expBar.style.width = '100%';
-    showToast('영상이 완성됐어요.');
   }
 
   async function shareExport() {

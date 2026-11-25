@@ -9,6 +9,7 @@ import {
   recorderOptions,
   pickMimeType,
   extensionFor,
+  isAppleWebKit,
 } from '../core/exporting.js';
 
 export function buildAudioGraph(win, video) {
@@ -52,7 +53,9 @@ export async function exportVideo({
     throw new Error('이 브라우저에서는 캔버스 녹화를 지원하지 않아요. 사파리를 최신 버전으로 올려 주세요.');
   }
 
-  const mime = pickMimeType((type) => win.MediaRecorder.isTypeSupported(type));
+  const mime = pickMimeType((type) => win.MediaRecorder.isTypeSupported(type), {
+    preferMp4: isAppleWebKit(win),
+  });
   const stream = canvas.captureStream(fps);
   const wantAudio = Boolean(anyAudio && audioGraph && audioGraph.destination);
   if (wantAudio) {
