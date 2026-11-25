@@ -5,7 +5,7 @@
   "type": "module",
   "description": "릴스·수제공·말랑이 영상을 아이폰에서 바로 자르고, 배속하고, 색감·자막을 넣는 모바일 웹 편집기",
   "scripts": {
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.js\""
   },
   "devDependencies": {
     "jsdom": "^25.0.1"
