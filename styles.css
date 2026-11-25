@@ -101,7 +101,15 @@ p { margin: 0; }
 .icon-btn svg { width: 21px; height: 21px; }
 
 /* ── 빈 상태 ───────────────────────────────────────────── */
-.empty { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 0 24px; }
+.empty {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 0 24px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
 .dropcard {
   position: relative;
   background: linear-gradient(170deg, #ffffff 0%, #fff8f4 55%, #fdf1f4 100%);
@@ -183,6 +191,7 @@ p { margin: 0; }
   flex-direction: column;
   padding-top: 4px;
 }
+.editor[hidden] { display: none; }
 .preview-wrap {
   flex: none;
   margin: 0 -16px;
