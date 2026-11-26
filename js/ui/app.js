@@ -62,57 +62,170 @@ export function createMediaAdapter(doc, win) {
       const id = `src${counter}`;
       const url = win.URL.createObjectURL(file);
       const video = doc.createElement('video');
-      video.preload = 'metadata';
+      video.preload = 'auto';
       video.muted = true;
       video.playsInline = true;
       if (video.setAttribute) video.setAttribute('playsinline', '');
       video.src = url;
+      // iOS 사파리는 문서에 붙지 않은 <video>에서 캔버스로 프레임을 못 그리는 경우가 있어
+      // 화면 밖에 잠깐 붙였다가 썸네일을 뽑은 뒤 치운다.
+      try {
+        video.style.cssText =
+          'position:fixed;left:-4px;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none;';
+        if (doc.body && doc.body.appendChild) doc.body.appendChild(video);
+      } catch (error) {
+        /* noop */
+      }
       if (video.load) video.load();
       const meta = await waitForMetadata(video);
-      const thumb = await grabThumb(doc, video, meta).catch(() => '');
-      return {
+      const cleanup = () => {
+        try {
+          if (video.pause) video.pause();
+          if (video.remove) video.remove();
+        } catch (error) {
+          /* noop */
+        }
+      };
+      const source = {
         id,
         name: file.name || '영상',
         url,
-        thumb,
+        thumb: '',
         file,
         ...meta,
       };
+      // 썸네일은 불러오기를 기다리게 하지 않고 뒤에서 뽑아 화면만 갱신한다.
+      source.thumbPromise = grabThumb(doc, video, meta, win)
+        .catch(() => '')
+        .then((thumb) => {
+          cleanup();
+          return thumb;
+        });
+      return source;
     },
   };
 }
 
-async function grabThumb(doc, video, meta) {
-  const canvas = doc.createElement('canvas');
-  const width = 132;
-  const height = Math.max(2, Math.round((width * meta.height) / meta.width));
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext && canvas.getContext('2d');
-  if (!ctx) return '';
-  const target = Math.min(0.3, Math.max(0, meta.duration * 0.1));
-  await new Promise((resolve) => {
+const THUMB_WIDTH = 132;
+
+function nextFrame(win) {
+  return new Promise((resolve) => {
+    if (win && typeof win.requestAnimationFrame === 'function') {
+      win.requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 16);
+    }
+  });
+}
+
+/** iOS 사파리는 메타데이터만으로는 프레임을 그리지 못한다. 실제 데이터가 올 때까지 기다린다. */
+function waitForFrameData(video, timeoutMs = 3000) {
+  return new Promise((resolve) => {
+    if (!video) {
+      resolve(false);
+      return;
+    }
+    if (video.readyState >= 2 && video.videoWidth) {
+      resolve(true);
+      return;
+    }
     let done = false;
+    let timer = null;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      video.removeEventListener('loadeddata', onData);
+      video.removeEventListener('canplay', onData);
+      resolve(ok);
+    };
+    const onData = () => finish(true);
+    video.addEventListener('loadeddata', onData);
+    video.addEventListener('canplay', onData);
+    timer = setTimeout(() => finish(video.readyState >= 2), timeoutMs);
+  });
+}
+
+function seekAndSettle(video, time, timeoutMs = 2200) {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer = null;
     const finish = () => {
       if (done) return;
       done = true;
+      if (timer) clearTimeout(timer);
       video.removeEventListener('seeked', finish);
       resolve();
     };
     video.addEventListener('seeked', finish);
+    timer = setTimeout(finish, timeoutMs);
+    const before = Number(video.currentTime) || 0;
+    const destination = Math.abs(before - time) < 0.01 ? time + 0.08 : time;
     try {
-      video.currentTime = target;
+      video.currentTime = destination;
     } catch (error) {
       finish();
     }
-    setTimeout(finish, 1600);
   });
+}
+
+function isNearlyBlack(ctx, width, height) {
   try {
-    ctx.drawImage(video, 0, 0, width, height);
-    return canvas.toDataURL('image/jpeg', 0.7);
+    const { data } = ctx.getImageData(0, 0, width, height);
+    let total = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4 * 17) {
+      total += data[i] + data[i + 1] + data[i + 2];
+      count += 3;
+    }
+    if (!count) return true;
+    return total / count < 10;
   } catch (error) {
-    return '';
+    // 픽셀을 읽을 수 없는 환경(테스트 등)에서는 그 프레임을 그대로 쓴다.
+    return false;
   }
+}
+
+/**
+ * 첫 프레임 썸네일을 뽑는다. iOS 사파리에서 디코딩 전 drawImage가 검은 프레임을
+ * 찍는 문제를 피하려고 준비 대기 + 두 번의 화면 프레임 대기 + 검정 판별 후
+ * 다른 지점에서 재시도를 한다. 끝까지 실패하면 빈 문자열을 돌려주고,
+ * 화면은 파스텔 카드로 대신한다(검은 막대가 보이지 않게).
+ */
+export async function grabThumb(doc, video, meta, win = globalThis.window) {
+  if (!video || !meta || !meta.width || !meta.height) return '';
+  const width = THUMB_WIDTH;
+  const height = Math.max(2, Math.round((width * meta.height) / meta.width));
+  const canvas = doc.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext && canvas.getContext('2d');
+  if (!ctx) return '';
+  await waitForFrameData(video);
+  const duration = Number(meta.duration) > 0 ? Number(meta.duration) : 1;
+  const spots = [
+    Math.min(0.28, duration * 0.1) + 0.04,
+    Math.min(duration * 0.5, 1.5),
+    0.04,
+  ];
+  for (const spot of spots) {
+    await seekAndSettle(video, spot);
+    await nextFrame(win);
+    await nextFrame(win);
+    try {
+      ctx.drawImage(video, 0, 0, width, height);
+    } catch (error) {
+      continue;
+    }
+    if (!isNearlyBlack(ctx, width, height)) {
+      try {
+        return canvas.toDataURL('image/jpeg', 0.72);
+      } catch (error) {
+        return '';
+      }
+    }
+  }
+  return '';
 }
 
 export function createApp(options = {}) {
@@ -123,6 +236,7 @@ export function createApp(options = {}) {
 
   const $ = (id) => doc.getElementById(id);
   const el = {
+    appRoot: $('app'),
     emptyState: $('emptyState'),
     editor: $('editor'),
     dock: $('dock'),
@@ -304,8 +418,10 @@ export function createApp(options = {}) {
       el.previewBadge.textContent = `${state.size.width} × ${state.size.height}`;
     }
     if (el.previewFrame) {
+      // 세로 화면에서는 미리보기를 컴팩트하게(30dvh · 최대 240px) 두고,
+      // 남는 세로 공간은 클립·색감·자막 패널이 쓰게 한다.
       el.previewFrame.style.aspectRatio = `${preview.width} / ${preview.height}`;
-      el.previewFrame.style.width = `min(100%, calc(min(42dvh, 380px) * ${(preview.width / preview.height).toFixed(4)}))`;
+      el.previewFrame.style.width = `min(100%, calc(clamp(180px, 30dvh, 240px) * ${(preview.width / preview.height).toFixed(4)}))`;
       el.previewFrame.style.height = 'auto';
     }
   }
@@ -349,6 +465,7 @@ export function createApp(options = {}) {
 
   function syncAll({ seek = false } = {}) {
     const hasClips = state.clips.length > 0;
+    if (el.appRoot && el.appRoot.classList) el.appRoot.classList.toggle('is-editing', hasClips);
     if (el.emptyState) el.emptyState.hidden = hasClips;
     if (el.editor) el.editor.hidden = !hasClips;
     if (el.dock) el.dock.hidden = !hasClips;
@@ -418,11 +535,21 @@ export function createApp(options = {}) {
       const button = doc.createElement('button');
       button.className = 'strip-item';
       button.dataset.clipId = segment.clipId;
-      button.style.flexGrow = String(Math.max(0.6, segment.duration));
+      // 길이에 비례하되 한 클립이 화면을 다 차지하지 않게 폭을 제한한다.
+      const stripWidth = Math.round(Math.max(48, Math.min(150, segment.duration * 18)));
+      button.style.flex = `0 0 ${stripWidth}px`;
       if (segment.clipId === state.selectedId) button.classList.add('is-active');
       const source = state.sources.get(segment.clip.sourceId);
       if (source && source.thumb) {
         button.style.backgroundImage = `linear-gradient(180deg, rgba(20, 14, 24, 0.08), rgba(20, 14, 24, 0.5)), url("${source.thumb}")`;
+      } else {
+        // 썸네일을 못 뽑았을 때 검은 막대 대신 파스텔 카드 + 길이 표시
+        button.classList.add('no-thumb');
+        button.textContent = '';
+        const dur = doc.createElement('span');
+        dur.className = 'strip-dur';
+        dur.textContent = formatTimecode(segment.duration);
+        button.appendChild(dur);
       }
       const number = doc.createElement('span');
       number.className = 'strip-no';
@@ -871,6 +998,18 @@ export function createApp(options = {}) {
         const source = await media.load(file);
         if (!source || !(source.duration > 0)) throw new Error('길이를 읽지 못했어요');
         state.sources.set(source.id, source);
+        if (source.thumbPromise && typeof source.thumbPromise.then === 'function') {
+          source.thumbPromise
+            .then((thumb) => {
+              if (!thumb) return;
+              const stored = state.sources.get(source.id);
+              if (!stored) return;
+              stored.thumb = thumb;
+              renderClipStrip();
+              renderClipPanel();
+            })
+            .catch(() => {});
+        }
         const clip = createClip({
           sourceId: source.id,
           sourceDuration: source.duration,
@@ -1153,6 +1292,22 @@ export function createApp(options = {}) {
       const node = $(`panel-${panel}`);
       if (node) node.hidden = panel !== name;
     });
+    scrollPanelToTop($(`panel-${name}`));
+  }
+
+  /** 탭을 바꾸면 그 패널이 위에서부터 온전히 보이게 맞춘다(입력창이 잘리지 않게). */
+  function scrollPanelToTop(panel) {
+    if (!panel) return;
+    if (el.panelScroll) el.panelScroll.scrollTop = 0;
+    const scroller = win.scrollY !== undefined ? win : doc.defaultView;
+    if (!scroller || typeof scroller.scrollTo !== 'function') return;
+    const bar = doc.querySelector('.tabs-bar');
+    const barHeight = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect().height : 0;
+    const rect = panel.getBoundingClientRect ? panel.getBoundingClientRect() : null;
+    if (!rect) return;
+    const current = Number(scroller.scrollY) || 0;
+    const target = Math.max(0, current + rect.top - barHeight - 6);
+    if (current > target) scroller.scrollTo({ top: target, behavior: 'auto' });
   }
 
   /* ── events ────────────────────────────────────────────── */

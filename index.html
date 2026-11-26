@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <title>릴스 컷 스튜디오 — 수제공·말랑이 영상 컷 편집</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, interactive-widget=resizes-content" />
 <meta name="theme-color" content="#fdf6f2" />
 <meta name="description" content="수제공·말랑이 릴스 영상을 아이폰에서 바로 자르고, 배속하고, 색감과 자막을 넣어 저장하세요. 영상은 기기 안에서만 처리됩니다." />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -13,7 +13,7 @@
 <link rel="manifest" href="./manifest.json" />
 <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
 <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-<link rel="stylesheet" href="./styles.css?v=2" />
+<link rel="stylesheet" href="./styles.css?v=3" />
 </head>
 <body>
 <div class="app" id="app">
@@ -98,11 +98,13 @@
       <div class="clip-strip" id="clipStrip" aria-label="클립 순서"></div>
     </section>
 
-    <nav class="tabs" role="tablist" aria-label="편집 항목">
-      <button class="tab is-active" data-panel="clips" role="tab" aria-selected="true">클립</button>
-      <button class="tab" data-panel="color" role="tab" aria-selected="false">색감</button>
-      <button class="tab" data-panel="subs" role="tab" aria-selected="false">자막</button>
-    </nav>
+    <div class="tabs-bar">
+      <nav class="tabs" role="tablist" aria-label="편집 항목">
+        <button class="tab is-active" data-panel="clips" role="tab" aria-selected="true">클립</button>
+        <button class="tab" data-panel="color" role="tab" aria-selected="false">색감</button>
+        <button class="tab" data-panel="subs" role="tab" aria-selected="false">자막</button>
+      </nav>
+    </div>
 
     <div class="panel-scroll" id="panelScroll">
     <section class="panel" id="panel-clips" role="tabpanel">
@@ -337,6 +339,6 @@
 <canvas id="exportCanvas" hidden></canvas>
 <video id="mediaVideo" playsinline webkit-playsinline muted preload="auto" crossorigin="anonymous"></video>
 
-<script type="module" src="./js/main.js?v=1"></script>
+<script type="module" src="./js/main.js?v=3"></script>
 </body>
 </html>

@@ -38,8 +38,13 @@ html, body {
   overscroll-behavior-y: contain;
 }
 
-body {
+/* 가로 넘칭은 viewport에서 자른다. body에 overflow-x를 주면 body가 스크롤
+   컨네이너가 되어 sticky 탭바가 화면에 붙지 않는다. */
+html {
   overflow-x: hidden;
+}
+
+body {
   min-height: 100dvh;
 }
 
@@ -54,23 +59,42 @@ p { margin: 0; }
 .app {
   max-width: 560px;
   margin: 0 auto;
-  height: 100dvh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   padding: 0 16px;
   padding-left: max(16px, env(safe-area-inset-left));
   padding-right: max(16px, env(safe-area-inset-right));
 }
+/* 편집 중에는 스크롤 끝이 하단 독에 가리지 않게 자리를 비워 둔다. */
+.app.is-editing {
+  padding-bottom: calc(92px + env(safe-area-inset-bottom));
+}
 
 /* ── 상단 바 ───────────────────────────────────────────── */
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: calc(14px + env(safe-area-inset-top)) 2px 12px;
+  padding: max(12px, env(safe-area-inset-top)) 2px 10px;
+  background: rgba(253, 246, 242, 0.94);
+  backdrop-filter: blur(14px);
 }
+/* 편집 중에는 브랜드 줄을 접어 세로 공간을 편집 패널에 내준다. */
+.app.is-editing .topbar {
+  position: static;
+  padding: max(6px, env(safe-area-inset-top)) 2px 4px;
+  background: transparent;
+  backdrop-filter: none;
+}
+.app.is-editing .brand-mark { width: 26px; height: 26px; }
+.app.is-editing .brand-text h1 { font-size: 14.5px; }
+.app.is-editing .brand-text p { display: none; }
+.app.is-editing .icon-btn { width: 36px; height: 36px; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .brand-mark { width: 36px; height: 36px; flex: none; }
 .brand-text { min-width: 0; }
@@ -107,8 +131,6 @@ p { margin: 0; }
 /* ── 빈 상태 ───────────────────────────────────────────── */
 .empty {
   flex: 1;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 12px 0 24px;
   display: flex;
   flex-direction: column;
@@ -190,23 +212,22 @@ p { margin: 0; }
 
 /* ── 미리보기 ─────────────────────────────────────────── */
 .editor {
-  flex: 1;
-  min-height: 0;
   display: flex;
   flex-direction: column;
-  padding-top: 4px;
+  padding-top: 2px;
 }
 .editor[hidden] { display: none; }
 .preview-wrap {
   flex: none;
   margin: 0 -16px;
-  padding: 8px 16px 10px;
+  padding: 6px 16px 6px;
   background: linear-gradient(180deg, var(--cream) 78%, rgba(253, 246, 242, 0));
 }
 .preview-frame {
   position: relative;
   width: 100%;
   height: auto;
+  max-height: clamp(170px, 30dvh, 250px);
   aspect-ratio: 9 / 16;
   background: #17121c;
   border-radius: 20px;
@@ -250,13 +271,13 @@ p { margin: 0; }
 .transport {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 8px;
 }
 .play-btn {
   flex: none;
-  width: 46px;
-  height: 46px;
+  width: 42px;
+  height: 42px;
   border-radius: 50%;
   border: 0;
   background: #fff;
@@ -312,16 +333,16 @@ input[type="range"].seek::-webkit-slider-thumb { border-color: var(--plum); }
 .clip-strip {
   display: flex;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 8px;
   overflow-x: auto;
-  padding: 2px 2px 6px;
+  padding: 2px 2px 4px;
   scrollbar-width: none;
 }
 .clip-strip::-webkit-scrollbar { display: none; }
 .strip-item {
   flex: none;
   min-width: 46px;
-  height: 44px;
+  height: 40px;
   border-radius: 11px;
   border: 2px solid transparent;
   background: #f3e8e3 center/cover no-repeat;
@@ -332,6 +353,26 @@ input[type="range"].seek::-webkit-slider-thumb { border-color: var(--plum); }
   place-items: center;
   padding: 0 8px;
   position: relative;
+  overflow: hidden;
+}
+/* 썸네일을 못 뽑았을 때: 검은 막대 대신 파스텔 카드 + 길이 표시 */
+.strip-item.no-thumb {
+  background: linear-gradient(135deg, #fbdfe9 0%, #ecdff5 58%, #fdeae0 100%);
+  border-color: rgba(224, 127, 160, 0.28);
+  color: #8a6f80;
+}
+.strip-item.no-thumb.is-active {
+  color: #6d4d5f;
+  text-shadow: none;
+}
+.strip-dur {
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
+  font-size: 9.5px;
+  font-weight: 800;
+  opacity: 0.85;
+  font-variant-numeric: tabular-nums;
 }
 .strip-no {
   position: absolute;
@@ -358,25 +399,28 @@ input[type="range"].seek::-webkit-slider-thumb { border-color: var(--plum); }
 }
 
 /* ── 탭 ───────────────────────────────────────────────── */
+/* 탭은 화면 위에 붙여 두고, 아래 패널은 문서와 함께 길게 스크롤된다. */
+.tabs-bar {
+  position: sticky;
+  top: 0;
+  z-index: 25;
+  margin: 0 -16px;
+  padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+  background: var(--cream);
+  box-shadow: 0 6px 12px -10px rgba(90, 60, 70, 0.35);
+}
 .tabs {
-  flex: none;
   display: flex;
   gap: 4px;
   background: #f6eae4;
   border-radius: 16px;
   padding: 4px;
-  margin: 12px 0 10px;
+  margin: 0;
   position: relative;
   z-index: 5;
 }
 .panel-scroll {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(96px + env(safe-area-inset-bottom));
-  scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom));
-  overscroll-behavior: contain;
+  padding-top: 12px;
 }
 .tab {
   flex: 1;
@@ -396,6 +440,7 @@ input[type="range"].seek::-webkit-slider-thumb { border-color: var(--plum); }
 
 /* ── 카드·패널 ────────────────────────────────────────── */
 .panel[hidden] { display: none; }
+.panel > .card:last-child { margin-bottom: 4px; }
 .card {
   background: var(--card);
   border-radius: var(--radius);
@@ -584,8 +629,10 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 62px; }
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-  background: rgba(255, 252, 250, 0.92);
+  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
+  padding-left: max(16px, env(safe-area-inset-left));
+  padding-right: max(16px, env(safe-area-inset-right));
+  background: rgba(255, 252, 250, 0.94);
   border-top: 1px solid #f4e4de;
   backdrop-filter: blur(14px);
   max-width: 560px;
@@ -596,6 +643,9 @@ textarea.input { resize: vertical; line-height: 1.5; min-height: 62px; }
 .dock-info strong { font-size: 15px; font-variant-numeric: tabular-nums; }
 .dock-info span { font-size: 11.5px; color: var(--ink-soft); }
 .dock .btn { min-width: 132px; }
+
+/* 키보드가 올라와도 자막 입력창이 독에 가리지 않게 */
+.input:focus, textarea.input:focus { scroll-margin-bottom: 140px; }
 
 /* ── 시트 ─────────────────────────────────────────────── */
 .sheet { position: fixed; inset: 0; z-index: 40; display: flex; align-items: flex-end; justify-content: center; }
