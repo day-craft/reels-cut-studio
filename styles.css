@@ -22,6 +22,10 @@
 
 * { box-sizing: border-box; }
 
+/* hidden 속성은 display 선언보다 약해서, flex/grid를 준 요소가 사라지지 않는다.
+   개별 규칙(.btn[hidden], .editor[hidden] …)을 빠뜨리지 않도록 전역 안전망을 둔다. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
@@ -110,6 +114,7 @@ p { margin: 0; }
   flex-direction: column;
   justify-content: center;
 }
+.empty[hidden] { display: none; }
 .dropcard {
   position: relative;
   background: linear-gradient(170deg, #ffffff 0%, #fff8f4 55%, #fdf1f4 100%);
